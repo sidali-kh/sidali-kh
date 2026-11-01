@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Builds the animated SVGs for the profile README.
-Fetches live numbers from GitHub (REST + GraphQL) when a token is available,
-otherwise falls back to sample data so the layout always renders."""
-import os, json, math, random, html, urllib.request, pathlib
+Uses live GitHub data (REST + GraphQL) when a token is available, sample data otherwise."""
+import os, json, math, random, html, datetime, urllib.request, pathlib
 
 USER = os.environ.get("GH_USER", "sidali-kh")
 TOKEN = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
@@ -11,6 +10,7 @@ OUT.mkdir(exist_ok=True)
 SANS = "Inter,'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif"
 MONO = "'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace"
 esc = html.escape
+num = lambda v: "–" if v is None else f"{v:,}"
 
 # ------------------------------------------------------------------ data
 def api(url, body=None):
@@ -21,52 +21,106 @@ def api(url, body=None):
     with urllib.request.urlopen(urllib.request.Request(url, data, h), timeout=20) as r:
         return json.load(r)
 
-stats = {"repos": None, "stars": None, "followers": None, "contrib": None}
-langs, days = [], []
+S = dict(repos=None, stars=None, followers=None, commits=None, prs=None, issues=None, contrib=None)
+langs, toprepos, weeks = [], [], []
+live = False
 try:
     u = api(f"https://api.github.com/users/{USER}")
-    stats["repos"], stats["followers"] = u["public_repos"], u["followers"]
-    repos = api(f"https://api.github.com/users/{USER}/repos?per_page=100&type=owner")
-    stats["stars"] = sum(r["stargazers_count"] for r in repos)
+    S["repos"], S["followers"] = u["public_repos"], u["followers"]
+    repos = [r for r in api(f"https://api.github.com/users/{USER}/repos?per_page=100&type=owner")]
+    S["stars"] = sum(r["stargazers_count"] for r in repos)
+    own = [r for r in repos if not r["fork"]]
     acc = {}
-    for r in repos:
-        if not r["fork"] and r["language"]:
-            acc[r["language"]] = acc.get(r["language"], 0) + max(r["size"], 1)
+    for r in own:
+        if r["language"]: acc[r["language"]] = acc.get(r["language"], 0) + max(r["size"], 1)
     tot = sum(acc.values()) or 1
     langs = sorted(((k, v / tot * 100) for k, v in acc.items()), key=lambda x: -x[1])[:5]
+    toprepos = sorted(own, key=lambda r: (r["stargazers_count"], r["pushed_at"]), reverse=True)[:3]
 except Exception as e:
     print("REST fetch failed:", e)
 if TOKEN:
     try:
-        q = '{user(login:"%s"){contributionsCollection{contributionCalendar{totalContributions weeks{contributionDays{contributionCount}}}}}}' % USER
-        cal = api("https://api.github.com/graphql", {"query": q})["data"]["user"]["contributionsCollection"]["contributionCalendar"]
-        stats["contrib"] = cal["totalContributions"]
-        days = [d["contributionCount"] for w in cal["weeks"] for d in w["contributionDays"]]
+        q = ('{user(login:"%s"){contributionsCollection{totalCommitContributions totalPullRequestContributions '
+             'totalIssueContributions contributionCalendar{totalContributions weeks{contributionDays{contributionCount date}}}}}}' % USER)
+        cc = api("https://api.github.com/graphql", {"query": q})["data"]["user"]["contributionsCollection"]
+        S["commits"], S["prs"], S["issues"] = cc["totalCommitContributions"], cc["totalPullRequestContributions"], cc["totalIssueContributions"]
+        S["contrib"] = cc["contributionCalendar"]["totalContributions"]
+        weeks = [[(d["date"], d["contributionCount"]) for d in w["contributionDays"]] for w in cc["contributionCalendar"]["weeks"]]
+        live = True
     except Exception as e:
         print("GraphQL fetch failed:", e)
-WEEKS = 26
-if len(days) < WEEKS * 7:  # preview data so the layout still renders
+if not weeks:  # sample data so the layout still renders before the first run
     random.seed(7)
-    days = [max(0, int(random.gauss(2, 3))) if random.random() > .35 else 0 for _ in range(WEEKS * 7)]
-window = days[-WEEKS * 7:]
+    today = datetime.date.today(); start = today - datetime.timedelta(days=364)
+    start -= datetime.timedelta(days=(start.weekday() + 1) % 7)
+    d = start
+    while d <= today:
+        wk = []
+        for _ in range(7):
+            if d <= today: wk.append((d.isoformat(), max(0, int(random.gauss(2, 3))) if random.random() > .35 else 0))
+            d += datetime.timedelta(days=1)
+        weeks.append(wk)
 if not langs:
     langs = [("JavaScript", 38), ("TypeScript", 24), ("PHP", 18), ("Python", 12), ("CSS", 8)]
-LC = {"JavaScript": "#f1e05a", "TypeScript": "#3178c6", "PHP": "#8892bf", "HTML": "#e34c26", "CSS": "#8e6bd8",
-      "Python": "#3572A5", "Blade": "#f7523f", "Dockerfile": "#4a90b8", "Shell": "#89e051",
-      "Jupyter Notebook": "#DA5B0B", "Java": "#b07219", "C": "#9aa0a6", "C++": "#f34b7d"}
-num = lambda v: "–" if v is None else f"{v:,}"
+flat = [c for w in weeks for _, c in w]
+cur = 0
+for c in (flat[:-1] if flat and flat[-1] == 0 else flat)[::-1]:
+    if c > 0: cur += 1
+    else: break
+longest = run = 0
+for c in flat:
+    run = run + 1 if c > 0 else 0; longest = max(longest, run)
+active = sum(1 for c in flat if c > 0)
+wk_tot = [0] * 7
+for w in weeks:
+    for dt, c in w: wk_tot[(datetime.date.fromisoformat(dt).weekday() + 1) % 7] += c
+LC = {"JavaScript": "#f1e05a", "TypeScript": "#3178c6", "PHP": "#8892bf", "HTML": "#e34c26", "CSS": "#a78bfa",
+      "Python": "#3fa0e0", "Blade": "#f7523f", "Dockerfile": "#4a90b8", "Shell": "#89e051", "Jupyter Notebook": "#DA5B0B",
+      "Java": "#b07219", "C": "#9aa0a6", "C++": "#f34b7d", "Vue": "#41b883", "SCSS": "#c6538c"}
+LANG_FALLBACK = ["#36bcf7", "#f472b6", "#fbbf24", "#34d399", "#a78bfa"]
 
-# ------------------------------------------------------------------ helpers
-THEME = """:root{--card:#f6f8fc;--bd:#dde3ee;--tx:#111827;--mu:#5b6578;--a:#0a8fd1;--a2:#7c5cf0;--c0:#e6ebf4;--c1:#b9e1f6;--c2:#7ccbef;--c3:#34a9e0;--c4:#0a7fc0;--chip:#fff}
-@media (prefers-color-scheme:dark){:root{--card:#141824;--bd:#242b3d;--tx:#eef1f8;--mu:#8d96ab;--a:#36bcf7;--a2:#a78bfa;--c0:#1a2030;--c1:#0f4a68;--c2:#11779f;--c3:#1fa3d6;--c4:#43c6fa;--chip:#1b2132}}
+# ------------------------------------------------------------------ shared pieces
+THEME = """:root{--card:#f7f9fd;--bd:#dde3ee;--tx:#111827;--mu:#5b6578;--chip:#fff;--c0:#e6ebf4;--c1:#d9d0fb;--c2:#a99af2;--c3:#4fc3f7;--c4:#10b981;
+--k1:#0a8fd1;--k2:#7c5cf0;--k3:#db2777;--k4:#d97706;--k5:#059669;--k6:#ea580c}
+@media (prefers-color-scheme:dark){:root{--card:#131724;--bd:#242b3d;--tx:#eef1f8;--mu:#8d96ab;--chip:#1b2132;--c0:#1a2030;--c1:#3b2a7a;--c2:#5b4fd6;--c3:#22b8f0;--c4:#34d399;
+--k1:#36bcf7;--k2:#a78bfa;--k3:#f472b6;--k4:#fbbf24;--k5:#34d399;--k6:#fb923c}}
 .card{fill:var(--card);stroke:var(--bd)}.ti{font:700 17px %s;fill:var(--tx)}.sb{font:400 13px %s;fill:var(--mu)}
 .big{font:800 34px %s;fill:var(--tx)}.mono{font:500 13px %s;fill:var(--tx)}""" % (SANS, SANS, SANS, MONO)
 
+def defs():
+    g = "".join(f'<radialGradient id="g{i}" cx=".08" cy="0" r="1.1"><stop offset="0" style="stop-color:var(--k{i});stop-opacity:.22"/><stop offset="1" style="stop-color:var(--k{i});stop-opacity:0"/></radialGradient>' for i in range(1, 7))
+    return (f'<defs>{g}<linearGradient id="sw" x1="0" x2="1"><stop offset="0" style="stop-color:var(--k1);stop-opacity:0"/><stop offset=".5" style="stop-color:var(--k1);stop-opacity:.45"/><stop offset="1" style="stop-color:var(--k1);stop-opacity:0"/></linearGradient>'
+            '<linearGradient id="ng" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:var(--k1)"/><stop offset="1" style="stop-color:var(--k3)"/></linearGradient>'
+            '<linearGradient id="fl" x1="0" x2="1"><stop offset="0" style="stop-color:var(--card)"/><stop offset="1" style="stop-color:var(--card);stop-opacity:0"/></linearGradient>'
+            '<linearGradient id="fr" x1="0" x2="1"><stop offset="0" style="stop-color:var(--card);stop-opacity:0"/><stop offset="1" style="stop-color:var(--card)"/></linearGradient>'
+            '<linearGradient id="ecg" x1="0" x2="1"><stop offset="0" style="stop-color:var(--k3)"/><stop offset="1" style="stop-color:var(--k4)"/></linearGradient>'
+            '<linearGradient id="jl" x1="0" x2="1"><stop offset="0" style="stop-color:var(--k1)"/><stop offset=".5" style="stop-color:var(--k2)"/><stop offset="1" style="stop-color:var(--k3)"/></linearGradient></defs>')
+
+def wrap(name, w, h, label, body):
+    (OUT / name).write_text(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" width="{w}" height="{h}" role="img" aria-label="{esc(label)}"><style>{THEME}</style>{defs()}{body}</svg>', encoding="utf-8")
+
 def reveal(inner, delay, rise=14):
-    """Fade-and-rise once on load. Visible by default if SMIL is unsupported."""
     d = delay + .7; k = f"0;{delay/d:.4f};1"
     return (f'<g>{inner}<animate attributeName="opacity" values="0;0;1" keyTimes="{k}" dur="{d:.2f}s" fill="freeze"/>'
             f'<animateTransform attributeName="transform" type="translate" values="0 {rise};0 {rise};0 0" keyTimes="{k}" dur="{d:.2f}s" fill="freeze"/></g>')
+
+def card(x, y, w, h, body, delay, k=1):
+    return reveal(f'<g transform="translate({x} {y})"><rect class="card" width="{w}" height="{h}" rx="20"/><rect width="{w}" height="{h}" rx="20" fill="url(#g{k})"/>{body}</g>', delay)
+
+def title(t, k, sub=None):
+    s = f'<rect x="24" y="29" width="8" height="8" rx="2.5" fill="var(--k{k})"/><text class="ti" x="40" y="39">{esc(t)}</text>'
+    return s + (f'<text class="sb" x="24" y="60">{esc(sub)}</text>' if sub else "")
+
+def pill(x, y, t, k):
+    w = len(t) * 7.4 + 22
+    return (f'<rect x="{x}" y="{y}" width="{w:.0f}" height="26" rx="13" fill="var(--k{k})" fill-opacity=".16" stroke="var(--k{k})" stroke-opacity=".55"/>'
+            f'<text x="{x+w/2:.0f}" y="{y+17}" text-anchor="middle" style="font:600 12px {MONO};fill:var(--k{k})">{esc(t)}</text>'), w
+
+def growbar(x, base, w, hmax, h, fill, delay, rx=6):
+    d = delay + .9; k = f"0;{delay/d:.4f};1"
+    return (f'<rect x="{x}" y="{base-h:.1f}" width="{w}" height="{h:.1f}" rx="{rx}" fill="{fill}">'
+            f'<animate attributeName="height" values="0;0;{h:.1f}" keyTimes="{k}" dur="{d:.2f}s" fill="freeze"/>'
+            f'<animate attributeName="y" values="{base};{base};{base-h:.1f}" keyTimes="{k}" dur="{d:.2f}s" fill="freeze"/></rect>')
 
 def typing(roles, x, y, cw, fs, color, cycle=4.6):
     T = cycle * len(roles); out = ""
@@ -90,106 +144,184 @@ def typing(roles, x, y, cw, fs, color, cycle=4.6):
 # ------------------------------------------------------------------ hero (always dark)
 def hero():
     orbit = ""
-    for r, dur, rev, dots in [(52, 18, 1, 1), (92, 28, -1, 2), (132, 42, 1, 3)]:
+    cols = ["#9fe0ff", "#f9a8d4", "#fcd34d", "#6ee7b7", "#c4b5fd", "#fdba74"]
+    for ri, (r, dur, rev, dots) in enumerate([(52, 18, 1, 1), (92, 28, -1, 2), (132, 42, 1, 3)]):
         a, b = (0, 360) if rev > 0 else (360, 0)
-        d = "".join(f'<circle cx="{820+r*math.cos(2*math.pi*k/dots+r)}" cy="{170+r*math.sin(2*math.pi*k/dots+r)}" r="4" fill="#9fe0ff"/>' for k in range(dots))
-        orbit += (f'<g><circle cx="820" cy="170" r="{r}" fill="none" stroke="#fff" stroke-opacity=".16" stroke-dasharray="3 7"/>{d}'
+        d = "".join(f'<circle cx="{820+r*math.cos(2*math.pi*k/dots+r)}" cy="{170+r*math.sin(2*math.pi*k/dots+r)}" r="{4.5}" fill="{cols[(ri*2+k)%6]}"/>' for k in range(dots))
+        orbit += (f'<g><circle cx="820" cy="170" r="{r}" fill="none" stroke="#fff" stroke-opacity=".18" stroke-dasharray="3 7"/>{d}'
                   f'<animateTransform attributeName="transform" type="rotate" from="{a} 820 170" to="{b} 820 170" dur="{dur}s" repeatCount="indefinite"/></g>')
     blobs = ""
-    for cx, cy, r, col, op, dur, dx, dy in [(220, 330, 170, "#36bcf7", .55, 15, 160, -50), (640, 40, 190, "#7c5cf0", .5, 19, -140, 60), (900, 330, 150, "#14b8a6", .4, 17, -120, -60)]:
+    for cx, cy, r, col, op, dur, dx, dy in [(200, 340, 170, "#36bcf7", .55, 15, 160, -50), (620, 30, 180, "#7c5cf0", .55, 19, -140, 60),
+                                            (930, 340, 150, "#14b8a6", .45, 17, -120, -60), (430, 360, 120, "#f472b6", .5, 13, 120, -70),
+                                            (980, 20, 110, "#fbbf24", .35, 16, -90, 70)]:
         blobs += (f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="{col}" fill-opacity="{op}"><animateTransform attributeName="transform" type="translate" values="0 0;{dx} {dy};0 0" dur="{dur}s" repeatCount="indefinite" calcMode="spline" keyTimes="0;.5;1" keySplines=".45 0 .55 1;.45 0 .55 1"/></circle>')
     roles = ["Telecommunications & ICT Engineer", "Full-Stack Web Developer", "Building Modern Web Applications"]
     svg = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 340" width="1000" height="340" role="img" aria-label="Sidali Khelil Cherfi: {esc(' | '.join(roles))}">
 <defs><clipPath id="cl"><rect width="1000" height="340" rx="26"/></clipPath><filter id="bl" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="55"/></filter>
-<linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="#7fd6ff"/><stop offset="1" stop-color="#c4b5fd"/></linearGradient></defs>
+<linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="#7fd6ff"/><stop offset=".55" stop-color="#c4b5fd"/><stop offset="1" stop-color="#f9a8d4"/></linearGradient></defs>
 <g clip-path="url(#cl)"><rect width="1000" height="340" fill="#0a0d15"/><g filter="url(#bl)">{blobs}</g>{orbit}
 <circle cx="820" cy="170" r="8" fill="#fff"><animate attributeName="r" values="7;11;7" dur="3s" repeatCount="indefinite"/></circle>
-<rect width="1000" height="340" fill="#0a0d15" fill-opacity=".18"/></g>
-<rect x=".5" y=".5" width="999" height="339" rx="25.5" fill="none" stroke="#fff" stroke-opacity=".1"/>
+<rect width="1000" height="340" fill="#0a0d15" fill-opacity=".15"/></g>
+<rect x=".5" y=".5" width="999" height="339" rx="25.5" fill="none" stroke="#fff" stroke-opacity=".12"/>
 {reveal(f'<text x="56" y="132" style="font:800 78px {SANS};letter-spacing:-2px;fill:#fff">Sidali</text>',.1,18)}
 {reveal(f'<text x="56" y="210" style="font:800 78px {SANS};letter-spacing:-2px;fill:url(#g)">Khelil Cherfi</text>',.35,18)}
 {reveal(typing(roles,58,276,13.2,22,"#9fe0ff"),.8,0)}
 </svg>'''
     (OUT / "hero.svg").write_text(svg, encoding="utf-8")
 
-# ------------------------------------------------------------------ bento
-def card(x, y, w, h, body, delay):
-    return reveal(f'<g transform="translate({x} {y})"><rect class="card" width="{w}" height="{h}" rx="20"/>{body}</g>', delay)
-
-def bento():
-    parts = []
-    # A: networks to interfaces
+# ------------------------------------------------------------------ overview
+def overview():
+    P = []
+    # network card
     nodes = [("IP network", 70), ("API", 235), ("Interface", 400)]
-    s = '<text class="ti" x="26" y="44">From networks to interfaces</text><text class="sb" x="26" y="68">Telecom engineering, full-stack craft</text>'
+    s = title("From networks to interfaces", 1, "Telecom engineering, full-stack craft")
     for j in range(2):
         x1, x2 = nodes[j][1] + 22, nodes[j + 1][1] - 22
         s += f'<path id="a{j}" d="M{x1} 128 L{x2} 128" stroke="var(--bd)" stroke-width="2" stroke-dasharray="4 6" fill="none"/>'
-        for k in range(2):
-            s += f'<circle r="4" fill="var(--a)"><animateMotion dur="1.9s" begin="{k*.95+j*.4}s" repeatCount="indefinite"><mpath href="#a{j}"/></animateMotion></circle>'
+        for k, col in enumerate(["var(--k1)", "var(--k3)"]):
+            s += f'<circle r="4.5" fill="{col}"><animateMotion dur="1.9s" begin="{k*.95+j*.4}s" repeatCount="indefinite"><mpath href="#a{j}"/></animateMotion></circle>'
     for i, (t, x) in enumerate(nodes):
-        s += (f'<circle cx="{x}" cy="128" r="20" fill="none" stroke="var(--a)" stroke-opacity=".6"><animate attributeName="r" values="20;32;32" keyTimes="0;.7;1" dur="2.8s" begin="{i*.6}s" repeatCount="indefinite"/><animate attributeName="stroke-opacity" values=".6;0;0" keyTimes="0;.7;1" dur="2.8s" begin="{i*.6}s" repeatCount="indefinite"/></circle>'
-              f'<circle cx="{x}" cy="128" r="14" fill="url(#ng)"/><text class="sb" x="{x}" y="180" text-anchor="middle">{t}</text>')
-    parts.append(card(0, 0, 470, 200, s, .9))
-    # B: numbers
-    items = [("Repositories", stats["repos"]), ("Stars", stats["stars"]), ("Followers", stats["followers"]), ("Contributions", stats["contrib"])]
-    s = '<text class="ti" x="24" y="44">On GitHub</text>'
-    for i, (l, v) in enumerate(items):
-        x = 24 + (i % 2) * 116; y = 98 + (i // 2) * 62
-        s += f'<text class="big" x="{x}" y="{y}">{num(v)}</text><text class="sb" x="{x}" y="{y+20}">{l}</text>'
-    parts.append(card(486, 0, 254, 200, s, 1.05))
-    # C: availability
-    s = ('<circle cx="34" cy="40" r="5" fill="#22c55e"/><circle cx="34" cy="40" r="5" fill="none" stroke="#22c55e"><animate attributeName="r" values="5;14" dur="2s" repeatCount="indefinite"/><animate attributeName="stroke-opacity" values=".8;0" dur="2s" repeatCount="indefinite"/></circle>'
-         '<text class="ti" x="52" y="46">Open to work</text>'
-         '<text class="mono" x="24" y="88">Internship or CDD</text>'
-         '<text class="sb" x="24" y="114">Full-Stack development</text><text class="sb" x="24" y="134">IP networks</text><text class="sb" x="24" y="154">AI and DevOps</text>'
-         '<text class="sb" x="24" y="184">Médéa, Algeria</text>')
-    parts.append(card(756, 0, 244, 200, s, 1.2))
-    # D: heatmap
-    mx = max(window) or 1
+        c = ["var(--k1)", "var(--k2)", "var(--k3)"][i]
+        s += (f'<circle cx="{x}" cy="128" r="20" fill="none" stroke="{c}" stroke-opacity=".7"><animate attributeName="r" values="20;32;32" keyTimes="0;.7;1" dur="2.8s" begin="{i*.6}s" repeatCount="indefinite"/><animate attributeName="stroke-opacity" values=".7;0;0" keyTimes="0;.7;1" dur="2.8s" begin="{i*.6}s" repeatCount="indefinite"/></circle>'
+              f'<circle cx="{x}" cy="128" r="14" fill="{c}"/><text class="sb" x="{x}" y="180" text-anchor="middle">{t}</text>')
+    P.append(card(0, 0, 470, 200, s, .9, 1))
+    # open to work
+    s = ('<circle cx="34" cy="38" r="5" fill="#22c55e"/><circle cx="34" cy="38" r="5" fill="none" stroke="#22c55e"><animate attributeName="r" values="5;14" dur="2s" repeatCount="indefinite"/><animate attributeName="stroke-opacity" values=".8;0" dur="2s" repeatCount="indefinite"/></circle>'
+         '<text class="ti" x="52" y="44">Open to work</text><text class="mono" x="24" y="84">Internship or CDD</text>')
+    x = 24
+    for t, k, row in [("Full-Stack", 1, 0), ("IP networks", 3, 0), ("AI", 2, 1), ("DevOps", 4, 1)]:
+        if row == 1 and t == "AI": x = 24
+        p, w = pill(x, 98 + row * 34, t, k); s += p; x += w + 8
+        if t == "IP networks": x = 24
+    s += '<text class="sb" x="24" y="186">Médéa, Algeria</text>'
+    P.append(card(486, 0, 254, 200, s, 1.05, 5))
+    # languages spoken
+    s = title("Languages I speak", 4)
+    for i, (n, lv, pct, k) in enumerate([("Arabic", "Native", 100, 5), ("French", "B1 (TCF)", 50, 3), ("English", "B2 (IELTS)", 66, 1)]):
+        y = 78 + i * 38; d = 1.3 + i * .15; kt = f"0;{d/(d+.9):.4f};1"; fw = 196 * pct / 100
+        s += (f'<text class="mono" x="24" y="{y}">{n}</text><text class="sb" x="220" y="{y}" text-anchor="end">{lv}</text>'
+              f'<rect x="24" y="{y+9}" width="196" height="6" rx="3" fill="var(--c0)"/><rect x="24" y="{y+9}" width="{fw:.0f}" height="6" rx="3" fill="var(--k{k})"><animate attributeName="width" values="0;0;{fw:.0f}" keyTimes="{kt}" dur="{d+.9:.2f}s" fill="freeze"/></rect>')
+    P.append(card(756, 0, 244, 200, s, 1.2, 4))
+    # statistics strip
+    tiles = [("Repositories", S["repos"], 1), ("Stars earned", S["stars"], 4), ("Followers", S["followers"], 3),
+             ("Commits this year", S["commits"], 5), ("Pull requests", S["prs"], 2), ("Issues", S["issues"], 6)]
+    s = title("Statistics", 1)
+    for i, (l, v, k) in enumerate(tiles):
+        x = 24 + i * 160; d = 1.5 + i * .1; kt = f"0;{d/(d+.8):.4f};1"
+        s += (f'<text x="{x}" y="92" style="font:800 34px {SANS};fill:var(--k{k})">{num(v)}</text><text class="sb" x="{x}" y="114">{l}</text>'
+              f'<rect x="{x}" y="124" width="100" height="4" rx="2" fill="var(--c0)"/><rect x="{x}" y="124" width="48" height="4" rx="2" fill="var(--k{k})"><animate attributeName="width" values="0;0;48" keyTimes="{kt}" dur="{d+.8:.2f}s" fill="freeze"/></rect>')
+    P.append(card(0, 216, 1000, 146, s, 1.4, 2))
+    wrap("overview.svg", 1000, 362, "Overview: skills, availability, languages and GitHub statistics", "".join(P))
+
+# ------------------------------------------------------------------ activity
+def activity():
+    P = []
+    # heatmap
+    win = weeks[-26:]
+    mx = max([c for w in win for _, c in w] + [1])
     lvl = lambda c: 0 if c == 0 else min(4, 1 + int(3 * (c - 1) / max(mx - 1, 1) + .0001))
-    s = '<text class="ti" x="24" y="40">Activity</text><text class="sb" x="24" y="60">Last 26 weeks</text>'
-    gx, gy, cs, gp = 24, 72, 13, 4
+    gx, gy, cs, gp = 24, 76, 13, 4
     cells = ""
-    for i, c in enumerate(window):
-        col, row = divmod(i, 7); d = 1.3 + col * .04
-        k = f"0;{d/(d+.5):.4f};1"
-        cells += f'<rect x="{gx+col*(cs+gp)}" y="{gy+row*(cs+gp)}" width="{cs}" height="{cs}" rx="3.5" fill="var(--c{lvl(c)})"><animate attributeName="opacity" values="0;0;1" keyTimes="{k}" dur="{d+.5:.2f}s" fill="freeze"/></rect>'
+    for col, w in enumerate(win):
+        for row, (_, c) in enumerate(w):
+            d = .9 + col * .04; kt = f"0;{d/(d+.5):.4f};1"
+            cells += f'<rect x="{gx+col*(cs+gp)}" y="{gy+row*(cs+gp)}" width="{cs}" height="{cs}" rx="3.5" fill="var(--c{lvl(c)})"><animate attributeName="opacity" values="0;0;1" keyTimes="{kt}" dur="{d+.5:.2f}s" fill="freeze"/></rect>'
     gw = 26 * (cs + gp) - gp; gh = 7 * (cs + gp) - gp
+    s = title("Activity", 2, "Contributions over the last 26 weeks")
     s += (f'<clipPath id="gc"><rect x="{gx}" y="{gy}" width="{gw}" height="{gh}"/></clipPath>{cells}'
           f'<g clip-path="url(#gc)"><rect y="{gy}" width="70" height="{gh}" fill="url(#sw)"><animateTransform attributeName="transform" type="translate" values="{gx-70} 0;{gx+gw} 0;{gx+gw} 0" keyTimes="0;.55;1" dur="7s" begin="2.5s" repeatCount="indefinite"/></rect></g>'
-          f'<text class="big" x="{gx+gw+24}" y="112">{num(stats["contrib"])}</text><text class="sb" x="{gx+gw+24}" y="134">contributions</text><text class="sb" x="{gx+gw+24}" y="152">in the past year</text>')
-    parts.append(card(0, 216, 620, 200, s, 1.35))
-    # E: languages
-    s = '<text class="ti" x="24" y="40">Languages</text>'
+          f'<text x="{gx+gw+24}" y="120" style="font:800 32px {SANS};fill:var(--k5)">{num(S["contrib"])}</text><text class="sb" x="{gx+gw+24}" y="142">in the past year</text>')
+    lg = "".join(f'<rect x="{gx+gw+24+i*16}" y="166" width="12" height="12" rx="3.5" fill="var(--c{i})"/>' for i in range(5))
+    P.append(card(0, 0, 600, 200, s + lg, .3, 2))
+    # donut
+    s = title("Top languages", 3)
+    cx, cy, r, sw = 92, 114, 50, 20; C = 2 * math.pi * r; tot = sum(p for _, p in langs); off = 0; leg = ""
     for i, (n, p) in enumerate(langs):
-        y = 72 + i * 25; bw = 336; fw = max(4, bw * p / 100); col = LC.get(n, "#8d96ab"); d = 1.6 + i * .12
-        k = f"0;{d/(d+.9):.4f};1"
-        s += (f'<text class="mono" x="24" y="{y}">{esc(n)}</text><text class="sb" x="360" y="{y}" text-anchor="end">{p:.0f}%</text>'
-              f'<rect x="24" y="{y+7}" width="{bw}" height="6" rx="3" fill="var(--c0)"/>'
-              f'<rect x="24" y="{y+7}" width="{fw:.0f}" height="6" rx="3" fill="{col}"><animate attributeName="width" values="0;0;{fw:.0f}" keyTimes="{k}" dur="{d+.9:.2f}s" fill="freeze"/></rect>')
-    parts.append(card(636, 216, 364, 200, s, 1.5))
-    # F: stack marquee
+        col = LC.get(n, LANG_FALLBACK[i % 5]); ln = C * p / tot; d = .7 + i * .15; kt = f"0;{d/(d+.9):.4f};1"
+        s += (f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{col}" stroke-width="{sw}" stroke-dasharray="{max(ln-2,1):.2f} {C-max(ln-2,1):.2f}" stroke-dashoffset="{-off:.2f}" transform="rotate(-90 {cx} {cy})">'
+              f'<animate attributeName="stroke-dasharray" values="0 {C:.2f};0 {C:.2f};{max(ln-2,1):.2f} {C-max(ln-2,1):.2f}" keyTimes="{kt}" dur="{d+.9:.2f}s" fill="freeze"/></circle>')
+        off += ln; y = 76 + i * 26
+        leg += f'<circle cx="182" cy="{y-4}" r="5" fill="{col}"/><text class="mono" x="196" y="{y}">{esc(n)}</text><text class="sb" x="360" y="{y}" text-anchor="end">{p/tot*100:.0f}%</text>'
+    P.append(card(616, 0, 384, 200, s + leg, .45, 3))
+    # streak
+    s = title("Streak", 4)
+    rr = 40; Cc = 2 * math.pi * rr; frac = min(1, cur / max(longest, 1)) if live else .6
+    s += (f'<circle cx="84" cy="102" r="{rr}" fill="none" stroke="var(--c0)" stroke-width="9"/>'
+          f'<circle cx="84" cy="102" r="{rr}" fill="none" stroke="var(--k4)" stroke-width="9" stroke-linecap="round" transform="rotate(-90 84 102)"><animate attributeName="stroke-dasharray" values="0 {Cc:.1f};0 {Cc:.1f};{Cc*frac:.1f} {Cc:.1f}" keyTimes="0;.2;1" dur="2.2s" fill="freeze"/></circle>'
+          f'<text x="84" y="108" text-anchor="middle" style="font:800 26px {SANS};fill:var(--tx)">{num(cur) if live else "–"}</text><text class="sb" x="84" y="123" text-anchor="middle">current</text>'
+          f'<text class="sb" x="170" y="82">Longest streak</text><text x="170" y="108" style="font:800 24px {SANS};fill:var(--k4)">{num(longest) if live else "–"}</text>'
+          f'<text class="sb" x="170" y="132">Active days</text><text x="170" y="158" style="font:800 24px {SANS};fill:var(--k5)">{num(active) if live else "–"}</text>')
+    P.append(card(0, 216, 300, 170, s, .6, 4))
+    # weekday rhythm
+    s = title("Weekly rhythm", 5); base = 140; mxw = max(wk_tot) or 1
+    for i, v in enumerate(wk_tot):
+        x = 24 + i * 42; h = max(4, 78 * v / mxw)
+        s += growbar(x, base, 28, 78, h, f"var(--k{[1,2,3,4,5,6,1][i]})", .8 + i * .08) + f'<text class="sb" x="{x+14}" y="158" text-anchor="middle">{"SMTWTFS"[i]}</text>'
+    P.append(card(316, 216, 330, 170, s, .75, 5))
+    # top repositories
+    s = title("Top repositories", 6)
+    if toprepos:
+        for i, r in enumerate(toprepos):
+            y = 70 + i * 38; col = LC.get(r["language"], LANG_FALLBACK[i % 5]) if r["language"] else "var(--mu)"
+            desc = (r["description"] or "No description yet")[:40]
+            s += (f'<circle cx="30" cy="{y-4}" r="5" fill="{col}"/><text class="mono" x="44" y="{y}">{esc(r["name"][:22])}</text>'
+                  f'<text class="sb" x="314" y="{y}" text-anchor="end">★ {r["stargazers_count"]}</text><text class="sb" x="44" y="{y+16}">{esc(desc)}</text>')
+    else:
+        s += '<text class="sb" x="24" y="90">Your repositories show up here</text><text class="sb" x="24" y="110">after the first workflow run.</text>'
+    P.append(card(662, 216, 338, 170, s, .9, 6))
+    wrap("activity.svg", 1000, 386, "GitHub activity: heatmap, languages, streak, weekly rhythm and top repositories", "".join(P))
+
+# ------------------------------------------------------------------ work
+def work():
+    P = []
+    s = title("Focus areas", 1)
+    for i, (t, sub, k) in enumerate([("Full-Stack web", "Next.js, MERN, Laravel", 1), ("IP networks", "Telecom background", 3), ("AI and ML", "CNN, RNN, ViT", 2), ("DevOps", "Docker, Kubernetes", 5)]):
+        x = 24 + (i % 2) * 222; y = 62 + (i // 2) * 62
+        s += (f'<rect x="{x}" y="{y}" width="210" height="52" rx="14" fill="var(--k{k})" fill-opacity=".14" stroke="var(--k{k})" stroke-opacity=".5"/>'
+              f'<circle cx="{x+22}" cy="{y+26}" r="6" fill="var(--k{k})"><animate attributeName="r" values="5;8;5" dur="{2.4+i*.4}s" repeatCount="indefinite"/></circle>'
+              f'<text class="mono" x="{x+40}" y="{y+23}" style="font-weight:700">{t}</text><text class="sb" x="{x+40}" y="{y+41}">{sub}</text>')
+    P.append(card(0, 0, 490, 190, s, .3, 1))
+    beat = "h22 l5,-6 l5,6 h10 l4,5 l7,-44 l7,56 l5,-17 h10 l6,-9 l6,9 h24"
+    s = title("Final-year project", 3, "Cardiovascular disease detection from ECG images")
+    s += (f'<path d="M24 118 {beat*4}" pathLength="1000" fill="none" stroke="var(--bd)" stroke-width="3" stroke-linejoin="round"/>'
+          f'<path d="M24 118 {beat*4}" pathLength="1000" fill="none" stroke="url(#ecg)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="1000" stroke-dashoffset="1000">'
+          '<animate attributeName="stroke-dashoffset" values="1000;0;0;-1000" keyTimes="0;.55;.8;1" dur="5s" repeatCount="indefinite"/></path>')
+    x = 24
+    for t, k in [("Deep learning", 5), ("CNN", 1), ("RNN", 2), ("ViT", 3)]:
+        p, w = pill(x, 150, t, k); s += p; x += w + 8
+    P.append(card(506, 0, 494, 190, s, .45, 3))
+    # journey
+    s = title("Journey", 2)
+    steps = [("2023", "Network intern", "Algérie Télécom", 1), ("2024", "Telecom intern", "ATM Mobilis", 2),
+             ("2025", "Web developer intern", "SARL Baladiyatech", 3), ("June 2025", "Graduated, engineer", "ENSTTIC, Oran", 5)]
+    s += ('<path d="M120 108 H880" stroke="var(--c0)" stroke-width="4" stroke-linecap="round"/>'
+          '<path d="M120 108 H880" stroke="url(#jl)" stroke-width="4" stroke-linecap="round" pathLength="1000" stroke-dasharray="1000" stroke-dashoffset="1000"><animate attributeName="stroke-dashoffset" values="1000;1000;0" keyTimes="0;.15;1" dur="2.6s" fill="freeze"/></path>')
+    for i, (yr, role, org, k) in enumerate(steps):
+        x = 120 + i * 253.3
+        s += (f'<circle cx="{x:.0f}" cy="108" r="9" fill="var(--k{k})"/><circle cx="{x:.0f}" cy="108" r="9" fill="none" stroke="var(--k{k})"><animate attributeName="r" values="9;22" dur="2.6s" begin="{i*.5}s" repeatCount="indefinite"/><animate attributeName="stroke-opacity" values=".8;0" dur="2.6s" begin="{i*.5}s" repeatCount="indefinite"/></circle>'
+              f'<text x="{x:.0f}" y="82" text-anchor="middle" style="font:800 22px {SANS};fill:var(--k{k})">{yr}</text>'
+              f'<text x="{x:.0f}" y="146" text-anchor="middle" style="font:700 15px {SANS};fill:var(--tx)">{role}</text><text class="sb" x="{x:.0f}" y="166" text-anchor="middle">{org}</text>')
+    P.append(card(0, 206, 1000, 190, s, .6, 2))
+    wrap("work.svg", 1000, 396, "Focus areas, final-year project and journey", "".join(P))
+
+# ------------------------------------------------------------------ stack
+def stack():
     rows = [["HTML", "CSS", "JavaScript", "TypeScript", "React", "Next.js", "Tailwind", "Node.js", "Express", "PHP", "Laravel", "WordPress"],
-            ["MySQL", "PostgreSQL", "MongoDB", "Redis", "Docker", "Kubernetes", "Git", "GitHub", "Postman", "Linux", "MERN", "ML / CNN"]]
-    s = '<text class="ti" x="24" y="40">Stack</text><clipPath id="sc"><rect x="0" y="52" width="1000" height="84"/></clipPath><g clip-path="url(#sc)">'
+            ["MySQL", "PostgreSQL", "MongoDB", "Redis", "Docker", "Kubernetes", "Git", "GitHub", "Postman", "Linux", "MERN", "CNN / RNN / ViT"]]
+    s = title("Stack", 6) + '<clipPath id="sc"><rect x="0" y="52" width="1000" height="84"/></clipPath><g clip-path="url(#sc)">'
+    n = 0
     for r, items in enumerate(rows):
         x = 0; row = ""
         for it in items:
-            w = len(it) * 8.2 + 32
-            row += f'<rect x="{x:.0f}" y="{54+r*44}" width="{w:.0f}" height="34" rx="17" fill="var(--chip)" stroke="var(--bd)"/><text class="mono" x="{x+w/2:.0f}" y="{54+r*44+22}" text-anchor="middle">{esc(it)}</text>'
+            w = len(it) * 8.2 + 32; k = n % 6 + 1; n += 1
+            row += (f'<rect x="{x:.0f}" y="{54+r*44}" width="{w:.0f}" height="34" rx="17" fill="var(--k{k})" fill-opacity=".13" stroke="var(--k{k})" stroke-opacity=".55"/>'
+                    f'<text class="mono" x="{x+w/2:.0f}" y="{54+r*44+22}" text-anchor="middle">{esc(it)}</text>')
             x += w + 12
         a, b = (0, -x) if r == 0 else (-x, 0)
         s += (f'<g><animateTransform attributeName="transform" type="translate" from="{a:.0f} 0" to="{b:.0f} 0" dur="{34+r*6}s" repeatCount="indefinite"/>'
               f'{row}<g transform="translate({x:.0f} 0)">{row}</g><g transform="translate({2*x:.0f} 0)">{row}</g></g>')
     s += '<rect x="0" y="52" width="70" height="84" fill="url(#fl)"/><rect x="930" y="52" width="70" height="84" fill="url(#fr)"/></g>'
-    parts.append(card(0, 432, 1000, 150, s, 1.65))
-    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 582" width="1000" height="582" role="img" aria-label="Profile overview: skills, GitHub activity, languages and availability">
-<style>{THEME}</style>
-<defs><linearGradient id="ng" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:var(--a)"/><stop offset="1" style="stop-color:var(--a2)"/></linearGradient>
-<linearGradient id="sw" x1="0" x2="1"><stop offset="0" style="stop-color:var(--a);stop-opacity:0"/><stop offset=".5" style="stop-color:var(--a);stop-opacity:.4"/><stop offset="1" style="stop-color:var(--a);stop-opacity:0"/></linearGradient>
-<linearGradient id="fl" x1="0" x2="1"><stop offset="0" style="stop-color:var(--card)"/><stop offset="1" style="stop-color:var(--card);stop-opacity:0"/></linearGradient>
-<linearGradient id="fr" x1="0" x2="1"><stop offset="0" style="stop-color:var(--card);stop-opacity:0"/><stop offset="1" style="stop-color:var(--card)"/></linearGradient></defs>
-{''.join(parts)}</svg>'''
-    (OUT / "bento.svg").write_text(svg, encoding="utf-8")
+    wrap("stack.svg", 1000, 150, "Technologies I use", card(0, 0, 1000, 150, s, .3, 6))
 
-hero(); bento(); print("assets written; token:", bool(TOKEN), "| stats:", stats)
+hero(); overview(); activity(); work(); stack()
+print("assets written | token:", bool(TOKEN), "| live data:", live, "| stats:", S)
