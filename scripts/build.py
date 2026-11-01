@@ -87,6 +87,23 @@ THEME = """:root{--card:#f7f9fd;--bd:#dde3ee;--tx:#111827;--mu:#5b6578;--chip:#f
 .card{fill:var(--card);stroke:var(--bd)}.ti{font:700 17px %s;fill:var(--tx)}.sb{font:400 13px %s;fill:var(--mu)}
 .big{font:800 34px %s;fill:var(--tx)}.mono{font:500 13px %s;fill:var(--tx)}""" % (SANS, SANS, SANS, MONO)
 
+ICONS = json.load(open(pathlib.Path(__file__).with_name("icons.json"), encoding="utf-8"))
+def _lum(h):
+    r, g, b = (int(h[i:i+2], 16) / 255 for i in (0, 2, 4)); return .2126 * r + .7152 * g + .0722 * b
+def brand(slug, x, y, size, fill=None):
+    ic = ICONS["brand"][slug]
+    f = fill or (f"#{ic['c']}" if .08 < _lum(ic["c"]) < .9 else "var(--tx)")
+    return f'<path transform="translate({x} {y}) scale({size/24:.4f})" d="{ic["p"]}" fill="{f}"/>'
+def octi(name, x, y, size, fill):
+    return f'<g transform="translate({x} {y}) scale({size/16:.4f})" fill="{fill}">{ICONS["octicon"][name]}</g>'
+LANGSLUG = {"JavaScript": "javascript", "TypeScript": "typescript", "PHP": "php", "HTML": "html5", "CSS": "css3",
+            "Python": "python", "Blade": "laravel", "Dockerfile": "docker", "Shell": "gnubash", "Jupyter Notebook": "jupyter",
+            "Java": "openjdk", "C": "c", "C++": "cplusplus", "Vue": "vuedotjs", "SCSS": "sass", "Go": "go", "Rust": "rust",
+            "Dart": "dart", "Kotlin": "kotlin", "Swift": "swift"}
+def lang_icon(name, x, y, size):
+    slug = LANGSLUG.get(name)
+    return brand(slug, x, y, size) if slug in ICONS["brand"] else octi("code", x, y, size, "var(--mu)")
+
 def defs():
     g = "".join(f'<radialGradient id="g{i}" cx=".08" cy="0" r="1.1"><stop offset="0" style="stop-color:var(--k{i});stop-opacity:.22"/><stop offset="1" style="stop-color:var(--k{i});stop-opacity:0"/></radialGradient>' for i in range(1, 7))
     return (f'<defs>{g}<linearGradient id="sw" x1="0" x2="1"><stop offset="0" style="stop-color:var(--k1);stop-opacity:0"/><stop offset=".5" style="stop-color:var(--k1);stop-opacity:.45"/><stop offset="1" style="stop-color:var(--k1);stop-opacity:0"/></linearGradient>'
@@ -203,12 +220,12 @@ def overview():
               f'<rect x="24" y="{y+9}" width="196" height="6" rx="3" fill="var(--c0)"/><rect x="24" y="{y+9}" width="{fw:.0f}" height="6" rx="3" fill="var(--k{k})"><animate attributeName="width" values="0;0;{fw:.0f}" keyTimes="{kt}" dur="{d+.9:.2f}s" fill="freeze"/></rect>')
     P.append(card(756, 0, 244, 200, s, 1.2, 4))
     # statistics strip
-    tiles = [("Repositories", S["repos"], 1), ("Stars earned", S["stars"], 4), ("Followers", S["followers"], 3),
-             ("Commits this year", S["commits"], 5), ("Pull requests", S["prs"], 2), ("Issues", S["issues"], 6)]
+    tiles = [("Repositories", S["repos"], 1, "repo"), ("Stars earned", S["stars"], 4, "star"), ("Followers", S["followers"], 3, "people"),
+             ("Commits this year", S["commits"], 5, "git-commit"), ("Pull requests", S["prs"], 2, "git-pull-request"), ("Issues", S["issues"], 6, "issue-opened")]
     s = title("Statistics", 1)
-    for i, (l, v, k) in enumerate(tiles):
+    for i, (l, v, k, ic) in enumerate(tiles):
         x = 24 + i * 160; d = 1.5 + i * .1; kt = f"0;{d/(d+.8):.4f};1"
-        s += (f'<text x="{x}" y="92" style="font:800 34px {SANS};fill:var(--k{k})">{num(v)}</text><text class="sb" x="{x}" y="114">{l}</text>'
+        s += (f'<text x="{x}" y="92" style="font:800 34px {SANS};fill:var(--k{k})">{num(v)}</text>{octi(ic, x, 102, 14, f"var(--k{k})")}<text class="sb" x="{x+20}" y="114">{l}</text>'
               f'<rect x="{x}" y="124" width="100" height="4" rx="2" fill="var(--c0)"/><rect x="{x}" y="124" width="48" height="4" rx="2" fill="var(--k{k})"><animate attributeName="width" values="0;0;48" keyTimes="{kt}" dur="{d+.8:.2f}s" fill="freeze"/></rect>')
     P.append(card(0, 216, 1000, 146, s, 1.4, 2))
     wrap("overview.svg", 1000, 362, "Overview: skills, availability, languages and GitHub statistics", "".join(P))
@@ -241,7 +258,7 @@ def activity():
         s += (f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{col}" stroke-width="{sw}" stroke-dasharray="{max(ln-2,1):.2f} {C-max(ln-2,1):.2f}" stroke-dashoffset="{-off:.2f}" transform="rotate(-90 {cx} {cy})">'
               f'<animate attributeName="stroke-dasharray" values="0 {C:.2f};0 {C:.2f};{max(ln-2,1):.2f} {C-max(ln-2,1):.2f}" keyTimes="{kt}" dur="{d+.9:.2f}s" fill="freeze"/></circle>')
         off += ln; y = 76 + i * 26
-        leg += f'<circle cx="182" cy="{y-4}" r="5" fill="{col}"/><text class="mono" x="196" y="{y}">{esc(n)}</text><text class="sb" x="360" y="{y}" text-anchor="end">{p/tot*100:.0f}%</text>'
+        leg += f'{lang_icon(n, 176, y-14, 16)}<text class="mono" x="200" y="{y}">{esc(n)}</text><text class="sb" x="360" y="{y}" text-anchor="end">{p/tot*100:.0f}%</text>'
     P.append(card(616, 0, 384, 200, s + leg, .45, 3))
     # streak
     s = title("Streak", 4)
@@ -264,7 +281,7 @@ def activity():
         for i, r in enumerate(toprepos):
             y = 70 + i * 38; col = LC.get(r["language"], LANG_FALLBACK[i % 5]) if r["language"] else "var(--mu)"
             desc = (r["description"] or "No description yet")[:40]
-            s += (f'<circle cx="30" cy="{y-4}" r="5" fill="{col}"/><text class="mono" x="44" y="{y}">{esc(r["name"][:22])}</text>'
+            s += (f'{lang_icon(r["language"], 22, y-14, 16) if r["language"] else octi("repo", 22, y-14, 16, "var(--mu)")}<text class="mono" x="44" y="{y}">{esc(r["name"][:22])}</text>'
                   f'<text class="sb" x="314" y="{y}" text-anchor="end">★ {r["stargazers_count"]}</text><text class="sb" x="44" y="{y+16}">{esc(desc)}</text>')
     else:
         s += '<text class="sb" x="24" y="90">Your repositories show up here</text><text class="sb" x="24" y="110">after the first workflow run.</text>'
@@ -275,11 +292,14 @@ def activity():
 def work():
     P = []
     s = title("Focus areas", 1)
+    net = lambda x, y, c: (f'<g transform="translate({x} {y})" stroke="{c}" stroke-width="1.8" fill="none" stroke-linecap="round"><path d="M4 18 L12 6 L20 18 M4 18 H20"/>'
+                           f'<circle cx="12" cy="6" r="3" fill="{c}"/><circle cx="4" cy="18" r="3" fill="{c}"/><circle cx="20" cy="18" r="3" fill="{c}"/></g>')
+    spark = lambda x, y, c: f'<path transform="translate({x} {y})" d="M12 2l2.2 6.8L21 11l-6.8 2.2L12 20l-2.2-6.8L3 11l6.8-2.2zM19 3l.8 2.2L22 6l-2.2.8L19 9l-.8-2.2L16 6l2.2-.8z" fill="{c}"/>'
     for i, (t, sub, k) in enumerate([("Full-Stack web", "Next.js, MERN, Laravel", 1), ("IP networks", "Telecom background", 3), ("AI and ML", "CNN, RNN, ViT", 2), ("DevOps", "Docker, Kubernetes", 5)]):
         x = 24 + (i % 2) * 222; y = 62 + (i // 2) * 62
-        s += (f'<rect x="{x}" y="{y}" width="210" height="52" rx="14" fill="var(--k{k})" fill-opacity=".14" stroke="var(--k{k})" stroke-opacity=".5"/>'
-              f'<circle cx="{x+22}" cy="{y+26}" r="6" fill="var(--k{k})"><animate attributeName="r" values="5;8;5" dur="{2.4+i*.4}s" repeatCount="indefinite"/></circle>'
-              f'<text class="mono" x="{x+40}" y="{y+23}" style="font-weight:700">{t}</text><text class="sb" x="{x+40}" y="{y+41}">{sub}</text>')
+        ico = [brand("react", x + 12, y + 14, 24), net(x + 12, y + 14, "var(--k3)"), spark(x + 12, y + 14, "var(--k2)"), brand("kubernetes", x + 12, y + 14, 24)][i]
+        s += (f'<rect x="{x}" y="{y}" width="210" height="52" rx="14" fill="var(--k{k})" fill-opacity=".14" stroke="var(--k{k})" stroke-opacity=".5"/>{ico}'
+              f'<text class="mono" x="{x+46}" y="{y+23}" style="font-weight:700">{t}</text><text class="sb" x="{x+46}" y="{y+41}">{sub}</text>')
     P.append(card(0, 0, 490, 190, s, .3, 1))
     beat = "h22 l5,-6 l5,6 h10 l4,5 l7,-44 l7,56 l5,-17 h10 l6,-9 l6,9 h24"
     s = title("Final-year project", 3, "Cardiovascular disease detection from ECG images")
@@ -292,36 +312,45 @@ def work():
     P.append(card(506, 0, 494, 190, s, .45, 3))
     # journey
     s = title("Journey", 2)
-    steps = [("2023", "Network intern", "Algérie Télécom", 1), ("2024", "Telecom intern", "ATM Mobilis", 2),
-             ("2025", "Web developer intern", "SARL Baladiyatech", 3), ("June 2025", "Graduated, engineer", "ENSTTIC, Oran", 5)]
+    steps = [("2023", "Network intern", "Algérie Télécom", 1, "briefcase"), ("2024", "Telecom intern", "ATM Mobilis", 2, "briefcase"),
+             ("2025", "Web developer intern", "SARL Baladiyatech", 3, "code"), ("June 2025", "Graduated, engineer", "ENSTTIC, Oran", 5, "mortar-board")]
     s += ('<path d="M120 108 H880" stroke="var(--c0)" stroke-width="4" stroke-linecap="round"/>'
           '<path d="M120 108 H880" stroke="url(#jl)" stroke-width="4" stroke-linecap="round" pathLength="1000" stroke-dasharray="1000" stroke-dashoffset="1000"><animate attributeName="stroke-dashoffset" values="1000;1000;0" keyTimes="0;.15;1" dur="2.6s" fill="freeze"/></path>')
-    for i, (yr, role, org, k) in enumerate(steps):
+    for i, (yr, role, org, k, ic) in enumerate(steps):
         x = 120 + i * 253.3
-        s += (f'<circle cx="{x:.0f}" cy="108" r="9" fill="var(--k{k})"/><circle cx="{x:.0f}" cy="108" r="9" fill="none" stroke="var(--k{k})"><animate attributeName="r" values="9;22" dur="2.6s" begin="{i*.5}s" repeatCount="indefinite"/><animate attributeName="stroke-opacity" values=".8;0" dur="2.6s" begin="{i*.5}s" repeatCount="indefinite"/></circle>'
-              f'<text x="{x:.0f}" y="82" text-anchor="middle" style="font:800 22px {SANS};fill:var(--k{k})">{yr}</text>'
-              f'<text x="{x:.0f}" y="146" text-anchor="middle" style="font:700 15px {SANS};fill:var(--tx)">{role}</text><text class="sb" x="{x:.0f}" y="166" text-anchor="middle">{org}</text>')
+        s += (f'<circle cx="{x:.0f}" cy="108" r="17" fill="var(--k{k})"/>{octi(ic, x-9, 99, 18, "var(--card)")}<circle cx="{x:.0f}" cy="108" r="17" fill="none" stroke="var(--k{k})"><animate attributeName="r" values="17;32" dur="2.6s" begin="{i*.5}s" repeatCount="indefinite"/><animate attributeName="stroke-opacity" values=".8;0" dur="2.6s" begin="{i*.5}s" repeatCount="indefinite"/></circle>'
+              f'<text x="{x:.0f}" y="74" text-anchor="middle" style="font:800 22px {SANS};fill:var(--k{k})">{yr}</text>'
+              f'<text x="{x:.0f}" y="152" text-anchor="middle" style="font:700 15px {SANS};fill:var(--tx)">{role}</text><text class="sb" x="{x:.0f}" y="172" text-anchor="middle">{org}</text>')
     P.append(card(0, 206, 1000, 190, s, .6, 2))
     wrap("work.svg", 1000, 396, "Focus areas, final-year project and journey", "".join(P))
 
 # ------------------------------------------------------------------ stack
 def stack():
-    rows = [["HTML", "CSS", "JavaScript", "TypeScript", "React", "Next.js", "Tailwind", "Node.js", "Express", "PHP", "Laravel", "WordPress"],
-            ["MySQL", "PostgreSQL", "MongoDB", "Redis", "Docker", "Kubernetes", "Git", "GitHub", "Postman", "Linux", "MERN", "CNN / RNN / ViT"]]
+    rows = [[("HTML", "html5"), ("CSS", "css3"), ("JavaScript", "javascript"), ("TypeScript", "typescript"), ("React", "react"), ("Next.js", "nextdotjs"),
+             ("Tailwind", "tailwindcss"), ("Node.js", "nodedotjs"), ("Express", "express"), ("PHP", "php"), ("Laravel", "laravel"), ("WordPress", "wordpress")],
+            [("MySQL", "mysql"), ("PostgreSQL", "postgresql"), ("MongoDB", "mongodb"), ("Redis", "redis"), ("Docker", "docker"), ("Kubernetes", "kubernetes"),
+             ("Git", "git"), ("GitHub", "github"), ("Postman", "postman"), ("Linux", "linux"), ("MERN", "o:stack"), ("CNN, RNN, ViT", "o:cpu")]]
     s = title("Stack", 6) + '<clipPath id="sc"><rect x="0" y="52" width="1000" height="84"/></clipPath><g clip-path="url(#sc)">'
-    n = 0
     for r, items in enumerate(rows):
-        x = 0; row = ""
-        for it in items:
-            w = len(it) * 8.2 + 32; k = n % 6 + 1; n += 1
-            row += (f'<rect x="{x:.0f}" y="{54+r*44}" width="{w:.0f}" height="34" rx="17" fill="var(--k{k})" fill-opacity=".13" stroke="var(--k{k})" stroke-opacity=".55"/>'
-                    f'<text class="mono" x="{x+w/2:.0f}" y="{54+r*44+22}" text-anchor="middle">{esc(it)}</text>')
+        x = 0; row = ""; y = 54 + r * 44
+        for it, slug in items:
+            w = len(it) * 8.2 + 58
+            ico = octi(slug[2:], x + 14, y + 9, 16, "var(--k1)") if slug.startswith("o:") else brand(slug, x + 14, y + 8, 18)
+            row += (f'<rect x="{x:.0f}" y="{y}" width="{w:.0f}" height="34" rx="17" fill="var(--chip)" stroke="var(--bd)"/>{ico}'
+                    f'<text class="mono" x="{x+40:.0f}" y="{y+22}">{esc(it)}</text>')
             x += w + 12
-        a, b = (0, -x) if r == 0 else (-x, 0)
-        s += (f'<g><animateTransform attributeName="transform" type="translate" from="{a:.0f} 0" to="{b:.0f} 0" dur="{34+r*6}s" repeatCount="indefinite"/>'
+        a2, b2 = (0, -x) if r == 0 else (-x, 0)
+        s += (f'<g><animateTransform attributeName="transform" type="translate" from="{a2:.0f} 0" to="{b2:.0f} 0" dur="{36+r*6}s" repeatCount="indefinite"/>'
               f'{row}<g transform="translate({x:.0f} 0)">{row}</g><g transform="translate({2*x:.0f} 0)">{row}</g></g>')
     s += '<rect x="0" y="52" width="70" height="84" fill="url(#fl)"/><rect x="930" y="52" width="70" height="84" fill="url(#fr)"/></g>'
     wrap("stack.svg", 1000, 150, "Technologies I use", card(0, 0, 1000, 150, s, .3, 6))
 
-hero(); overview(); activity(); work(); stack()
+def links():
+    for name, label, slug in [("github", "GitHub", "github"), ("linkedin", "LinkedIn", "linkedin"), ("email", "Email", "gmail")]:
+        body = (f'<clipPath id="lc"><rect width="168" height="52" rx="26"/></clipPath><rect class="card" x=".5" y=".5" width="167" height="51" rx="25.5"/>'
+                f'<g clip-path="url(#lc)"><rect y="0" width="60" height="52" fill="url(#sw)"><animateTransform attributeName="transform" type="translate" values="-60 0;168 0;168 0" keyTimes="0;.4;1" dur="4s" begin="{len(name)%3}s" repeatCount="indefinite"/></rect></g>'
+                f'{brand(slug, 22, 14, 24)}<text x="58" y="31" style="font:700 16px {SANS};fill:var(--tx)">{label}</text>')
+        (OUT / f"link-{name}.svg").write_text(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 168 52" width="168" height="52" role="img" aria-label="{label}"><style>{THEME}</style>{defs()}{body}</svg>', encoding="utf-8")
+
+hero(); overview(); activity(); work(); stack(); links()
 print("assets written | token:", bool(TOKEN), "| live data:", live, "| stats:", S)
