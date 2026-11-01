@@ -6,7 +6,7 @@
   <a href="mailto:sidalikhelilcherfi11@gmail.com"><img src="assets/link-email.svg" alt="Email" height="52"></a>
 </p>
 
-Telecommunications and ICT engineer (**ENSTTIC**, Oran, graduated June 2025) with a strong interest in **full-stack development**, **machine learning**, **IP networking** and **DevOps**. I build modern web applications, train deep learning models, and ship them in containers. Currently looking for an **internship or CDD** in one of these fields.
+<img src="assets/about.svg" alt="Telecommunications and ICT engineer (ENSTTIC, Oran, graduated June 2025) with a strong interest in full-stack development, machine learning, IP networking and DevOps. I build modern web applications, train deep learning models, and ship them in containers. Currently looking for an internship or CDD in one of these fields." width="100%">
 
 ### Overview
 <img src="assets/overview.svg" alt="Overview: from networks to interfaces, availability, languages spoken and GitHub statistics" width="100%">

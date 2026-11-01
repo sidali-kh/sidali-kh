@@ -105,9 +105,9 @@ _b = base64.b64encode((HERE / "fonts" / "jetbrains-mono-latin-700-normal.woff2")
 FONT_BTN = f"@font-face{{font-family:'JetBrains Mono';font-weight:700;font-style:normal;src:url(data:font/woff2;base64,{_b}) format('woff2')}}"
 
 THEME = """:root{--card:#f7f9fd;--bd:#dde3ee;--tx:#111827;--mu:#5b6578;--chip:#fff;--c0:#e6ebf4;--c1:#d9d0fb;--c2:#a99af2;--c3:#4fc3f7;--c4:#10b981;
---k1:#0a8fd1;--k2:#7c5cf0;--k3:#db2777;--k4:#d97706;--k5:#059669;--k6:#ea580c}
+--k1:#0a8fd1;--k2:#7c5cf0;--k3:#db2777;--k4:#d97706;--k5:#059669;--k6:#ea580c;--ed:#fbfcfe;--ed2:#eef2f8}
 @media (prefers-color-scheme:dark){:root{--card:#131724;--bd:#242b3d;--tx:#eef1f8;--mu:#8d96ab;--chip:#1b2132;--c0:#1a2030;--c1:#3b2a7a;--c2:#5b4fd6;--c3:#22b8f0;--c4:#34d399;
---k1:#36bcf7;--k2:#a78bfa;--k3:#f472b6;--k4:#fbbf24;--k5:#34d399;--k6:#fb923c}}
+--k1:#36bcf7;--k2:#a78bfa;--k3:#f472b6;--k4:#fbbf24;--k5:#34d399;--k6:#fb923c;--ed:#0d111b;--ed2:#151a27}}
 .card{fill:var(--card);stroke:var(--bd)}.ti{font:700 17px %s;fill:var(--tx)}.sb{font:500 12px %s;fill:var(--mu)}
 .big{font:700 34px %s;fill:var(--tx)}.mono{font:500 13px %s;fill:var(--tx)}""" % (SANS, SANS, SANS, MONO)
 
@@ -269,6 +269,111 @@ def hero():
 {reveal(typing(roles,58,262,13.2,22,"#9fe0ff"),.8,0)}
 </svg>'''
     (OUT / "hero.svg").write_text(svg, encoding="utf-8")
+
+
+# ------------------------------------------------------------------ about (text editor card)
+ABOUT = ("Telecommunications and ICT engineer (**ENSTTIC**, Oran, graduated June 2025) with a strong interest in "
+         "**full-stack development**, **machine learning**, **IP networking** and **DevOps**. I build modern web applications, "
+         "train deep learning models, and ship them in containers. Currently looking for an **internship or CDD** in one of these fields.")
+def about():
+    cw, lh, gx, tx, maxc = 8.4, 26, 56, 84, 90
+    # per-character styles: None = plain, ("b", n) = bold run n, "dim" = markdown asterisks
+    chars, bold, n = [], False, 0
+    i = 0
+    while i < len(ABOUT):
+        if ABOUT.startswith("**", i):
+            if not bold: n += 1
+            chars += [("*", "dim")] * 2; bold = not bold; i += 2; continue
+        chars.append((ABOUT[i], ("b", n) if bold else None)); i += 1
+    words, cur = [], []
+    for ch in chars:
+        if ch[0] == " ":
+            words.append(cur); cur = []
+        else: cur.append(ch)
+    words.append(cur)
+    wrapped, line = [], []
+    for w in words:
+        if line and len(line) + 1 + len(w) > maxc: wrapped.append(line); line = []
+        line = line + [(" ", None)] + w if line else list(w)
+    wrapped.append(line)
+    BOLD = ["var(--k6)", "var(--k1)", "var(--k2)", "var(--k3)", "var(--k5)", "var(--k4)"]
+    heading = [(c, "h") for c in "# About me"]
+    lines = [heading, []] + wrapped + [[]]            # file content, including blank lines
+    typed = [i for i, l in enumerate(lines) if l]     # indexes that get typed
+    H = 40 + 36 + 24 + len(lines) * lh + 18 + 28
+    top = 40 + 36 + 24                                # y of first line box
+    step, t0, gap = .022, 1.2, .18
+    # timeline
+    t = t0; times = {}; cur_steps = []                # cursor positions: (time, x, y)
+    for li in typed:
+        L = lines[li]; ts = []
+        cur_steps.append((t, tx, top + li * lh))
+        for k in range(1, len(L) + 1):
+            t += step; ts.append(t); cur_steps.append((t, tx + k * cw, top + li * lh))
+        times[li] = ts; t += gap
+    T = t + .3
+    def clip_anim(li):
+        L = lines[li]; ts = times[li]
+        kt = [0.0] + [x / T for x in ts] + [1.0]
+        vals = [0] + [round(k * cw, 1) for k in range(1, len(L) + 1)] + [round(len(L) * cw, 1)]
+        for j in range(1, len(kt)):
+            if kt[j] <= kt[j - 1]: kt[j] = kt[j - 1] + 1e-6
+        kt[-1] = 1.0
+        return (f'<animate attributeName="width" calcMode="discrete" keyTimes="{";".join(f"{x:.5f}" for x in kt)}" '
+                f'values="{";".join(str(v) for v in vals)}" dur="{T:.2f}s" fill="freeze"/>')
+    body = ""
+    for li, L in enumerate(lines):
+        y = top + li * lh
+        body += f'<text x="{gx}" y="{y+17}" text-anchor="end" style="font:500 12px {MONO};fill:var(--mu);fill-opacity:.7">{li+1}</text>'
+        if not L: continue
+        spans, run, prev = "", "", object()
+        def flush(run, st):
+            if not run: return ""
+            if st == "h": col, w = "var(--k2)", 700
+            elif st == "dim": col, w = "var(--mu)", 500
+            elif isinstance(st, tuple): col, w = BOLD[(st[1] - 1) % 6], 700
+            else: col, w = "var(--tx)", 500
+            return f'<tspan style="fill:{col};font-weight:{w}">{esc(run)}</tspan>'
+        for c, st in L:
+            if st != prev: spans += flush(run, prev); run, prev = "", st
+            run += c
+        spans += flush(run, prev)
+        W = len(L) * cw
+        body += (f'<clipPath id="al{li}"><rect x="{tx}" y="{y}" width="{W:.1f}" height="{lh}">{clip_anim(li)}</rect></clipPath>'
+                 f'<text x="{tx}" y="{y+17}" xml:space="preserve" clip-path="url(#al{li})" textLength="{W:.1f}" lengthAdjust="spacing" style="font:500 14px {MONO};white-space:pre">{spans}</text>')
+    # current-line highlight + cursor follow the typing
+    kt = [0.0] + [x[0] / T for x in cur_steps] + [1.0]
+    for j in range(1, len(kt)):
+        if kt[j] <= kt[j - 1]: kt[j] = kt[j - 1] + 1e-6
+    kt[-1] = 1.0; ktxt = ";".join(f"{x:.5f}" for x in kt)
+    xs = [cur_steps[0][1]] + [x[1] for x in cur_steps] + [cur_steps[-1][1]]
+    ys = [cur_steps[0][2]] + [x[2] for x in cur_steps] + [cur_steps[-1][2]]
+    follow = lambda attr, v, off=0: f'<animate attributeName="{attr}" calcMode="discrete" keyTimes="{ktxt}" values="{";".join(f"{a+off:.1f}" for a in v)}" dur="{T:.2f}s" fill="freeze"/>'
+    cursor = (f'<rect x="{xs[-1]:.1f}" y="{ys[-1]+3}" width="2" height="20" rx="1" fill="var(--k1)">{follow("x", xs)}{follow("y", ys, 3)}'
+              f'<animate attributeName="opacity" values="1;1;0;0" keyTimes="0;.5;.5001;1" dur="1.06s" repeatCount="indefinite"/></rect>')
+    hl = f'<rect x="{gx+14}" y="{ys[-1]}" width="{890-gx-14}" height="{lh}" fill="var(--k1)" fill-opacity=".07">{follow("y", ys)}</rect>'
+    # minimap
+    mm = "".join(f'<rect x="{934}" y="{top+8+li*6}" width="{max(2, len(L)*.42):.0f}" height="3" rx="1.5" fill="var(--mu)" fill-opacity=".35"/>' for li, L in enumerate(lines) if L)
+    mm += f'<rect x="928" y="{top+2}" width="52" height="{len(lines)*6+10}" rx="3" fill="var(--k1)" fill-opacity=".06" stroke="var(--k1)" stroke-opacity=".25"/>'
+    # chrome
+    title_bar = (f'<rect width="1000" height="40" fill="var(--ed2)"/>'
+                 + "".join(f'<circle cx="{24+i*20}" cy="20" r="6" fill="{c}"/>' for i, c in enumerate(["#ff5f57", "#febc2e", "#28c840"]))
+                 + f'<text x="500" y="25" text-anchor="middle" style="font:500 12px {MONO};fill:var(--mu)">sidali-kh — about.md</text>')
+    tabs = ('<rect y="40" width="1000" height="36" fill="var(--ed2)"/><rect y="75" width="1000" height="1" fill="var(--bd)"/>'
+            f'<rect x="0" y="40" width="172" height="36" fill="var(--ed)"/><rect x="0" y="40" width="172" height="2" fill="var(--k1)"/>{octi("markdown", 16, 51, 15, "var(--k1)")}'
+            f'<text x="40" y="63" style="font:500 12.5px {MONO};fill:var(--tx)">about.md</text>'
+            f'{octi("file", 188, 51, 15, "var(--mu)")}<text x="212" y="63" style="font:500 12.5px {MONO};fill:var(--mu)">README.md</text>')
+    lastL = typed[-1]; sy = H - 28
+    status = (f'<rect y="{sy}" width="1000" height="28" fill="var(--ed2)"/><rect y="{sy}" width="1000" height="1" fill="var(--bd)"/>'
+              f'{octi("git-branch", 18, sy+7, 14, "var(--k5)")}<text x="38" y="{sy+18}" style="font:500 12px {MONO};fill:var(--tx)">main</text>'
+              f'{octi("check", 92, sy+7, 14, "var(--k5)")}<text x="112" y="{sy+18}" style="font:500 12px {MONO};fill:var(--mu)">0 problems</text>'
+              f'<text x="982" y="{sy+18}" text-anchor="end" style="font:500 12px {MONO};fill:var(--mu)">UTF-8</text>'
+              f'<text x="920" y="{sy+18}" text-anchor="end" style="font:500 12px {MONO};fill:var(--k1)">Markdown</text>'
+              f'<text x="838" y="{sy+18}" text-anchor="end" style="font:500 12px {MONO};fill:var(--mu)">Ln {lastL+1}, Col {len(lines[lastL])+1}</text>')
+    inner = (f'<clipPath id="ac"><rect width="1000" height="{H}" rx="20"/></clipPath><g clip-path="url(#ac)"><rect width="1000" height="{H}" fill="var(--ed)"/>'
+             f'{title_bar}{tabs}<rect x="{gx+8}" y="76" width="1" height="{H-104}" fill="var(--bd)"/>{hl}{body}{cursor}{mm}{status}</g>'
+             f'<rect x=".5" y=".5" width="999" height="{H-1}" rx="19.5" fill="none" stroke="var(--bd)"/>')
+    wrap("about.svg", 1000, H, ABOUT.replace("**", ""), reveal(inner, .2, 12))
 
 # ------------------------------------------------------------------ overview
 def overview():
@@ -476,5 +581,5 @@ def links():
                 f'{brand(slug, 22, 14, 24)}<text x="58" y="32" style="font:700 16px {SANS};fill:var(--tx)">{label}</text>')
         (OUT / f"link-{name}.svg").write_text(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 168 52" width="168" height="52" role="img" aria-label="{label}"><style>{FONT_BTN}{THEME}</style>{defs()}{body}</svg>', encoding="utf-8")
 
-hero(); overview(); skills(); activity(); work(); stack(); links()
+hero(); about(); overview(); skills(); activity(); work(); stack(); links()
 print("assets written | live data:", live)
