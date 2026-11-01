@@ -9,9 +9,11 @@ HERE = pathlib.Path(__file__).resolve().parent
 USER = os.environ.get("GH_USER", "sidali-kh")
 TOKEN = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
 OUT = HERE.parent / "assets"; OUT.mkdir(exist_ok=True)
-SANS = "'Space Grotesk',Inter,'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif"
 MONO = "'JetBrains Mono','SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace"
+SANS = MONO  # one typeface for the whole profile
 esc = html.escape
+cut = lambda t, n: t if len(t) <= n else t[:n - 1].rstrip() + "…"
+SHORT = {"Jupyter Notebook": "Jupyter"}
 num = lambda v: "–" if v is None else f"{v:,}"
 ICONS = json.loads((HERE / "icons.json").read_text(encoding="utf-8"))
 
@@ -51,9 +53,9 @@ if TOKEN:
 if not live:  # ---------- DEMO DATA (placeholder numbers, replaced automatically by the workflow)
     S = dict(repos=24, stars=87, followers=56, commits=612, prs=38, issues=21, contrib=1248)
     langs = [("TypeScript", 32), ("JavaScript", 25), ("PHP", 17), ("Jupyter Notebook", 16), ("CSS", 10)]
-    toprepos = [dict(name="realestate-platform", description="Next.js and headless WordPress listing platform", language="TypeScript", stargazers_count=34),
-                dict(name="ecg-cardio-ai", description="Deep learning for cardiovascular disease detection", language="Jupyter Notebook", stargazers_count=28),
-                dict(name="mern-commerce", description="MERN store with auth, roles and file uploads", language="JavaScript", stargazers_count=19)]
+    toprepos = [dict(name="realestate-platform", description="Next.js + headless WordPress", language="TypeScript", stargazers_count=34),
+                dict(name="ecg-cardio-ai", description="Deep learning on ECG images", language="Jupyter Notebook", stargazers_count=28),
+                dict(name="mern-commerce", description="MERN store with auth and roles", language="JavaScript", stargazers_count=19)]
     random.seed(11)
     today = datetime.date.today(); start = today - datetime.timedelta(days=364)
     start -= datetime.timedelta(days=(start.weekday() + 1) % 7)
@@ -93,20 +95,20 @@ LANG_FALLBACK = ["#36bcf7", "#f472b6", "#fbbf24", "#34d399", "#a78bfa"]
 # ------------------------------------------------------------------ fonts (embedded so they work inside README images)
 def fontcss():
     css = ""
-    for fam, f in [("Space Grotesk", "space-grotesk"), ("JetBrains Mono", "jetbrains-mono")]:
+    for fam, f in [("JetBrains Mono", "jetbrains-mono")]:
         for w in (500, 700):
             b = base64.b64encode((HERE / "fonts" / f"{f}-latin-{w}-normal.woff2").read_bytes()).decode()
             css += f"@font-face{{font-family:'{fam}';font-weight:{w};font-style:normal;src:url(data:font/woff2;base64,{b}) format('woff2')}}"
     return css
 FONTCSS = fontcss()
-_b = base64.b64encode((HERE / "fonts" / "space-grotesk-latin-700-normal.woff2").read_bytes()).decode()
-FONT_BTN = f"@font-face{{font-family:'Space Grotesk';font-weight:700;font-style:normal;src:url(data:font/woff2;base64,{_b}) format('woff2')}}"
+_b = base64.b64encode((HERE / "fonts" / "jetbrains-mono-latin-700-normal.woff2").read_bytes()).decode()
+FONT_BTN = f"@font-face{{font-family:'JetBrains Mono';font-weight:700;font-style:normal;src:url(data:font/woff2;base64,{_b}) format('woff2')}}"
 
 THEME = """:root{--card:#f7f9fd;--bd:#dde3ee;--tx:#111827;--mu:#5b6578;--chip:#fff;--c0:#e6ebf4;--c1:#d9d0fb;--c2:#a99af2;--c3:#4fc3f7;--c4:#10b981;
 --k1:#0a8fd1;--k2:#7c5cf0;--k3:#db2777;--k4:#d97706;--k5:#059669;--k6:#ea580c}
 @media (prefers-color-scheme:dark){:root{--card:#131724;--bd:#242b3d;--tx:#eef1f8;--mu:#8d96ab;--chip:#1b2132;--c0:#1a2030;--c1:#3b2a7a;--c2:#5b4fd6;--c3:#22b8f0;--c4:#34d399;
 --k1:#36bcf7;--k2:#a78bfa;--k3:#f472b6;--k4:#fbbf24;--k5:#34d399;--k6:#fb923c}}
-.card{fill:var(--card);stroke:var(--bd)}.ti{font:700 17px %s;fill:var(--tx)}.sb{font:500 13px %s;fill:var(--mu)}
+.card{fill:var(--card);stroke:var(--bd)}.ti{font:700 17px %s;fill:var(--tx)}.sb{font:500 12px %s;fill:var(--mu)}
 .big{font:700 34px %s;fill:var(--tx)}.mono{font:500 13px %s;fill:var(--tx)}""" % (SANS, SANS, SANS, MONO)
 
 # ------------------------------------------------------------------ icon + layout helpers
@@ -198,29 +200,73 @@ def typing(roles, x, y, cw, fs, color, cycle=4.6):
 
 # ------------------------------------------------------------------ hero (always dark)
 def hero():
-    orbit = ""
-    cols = ["#9fe0ff", "#f9a8d4", "#fcd34d", "#6ee7b7", "#c4b5fd", "#fdba74"]
-    for ri, (r, dur, rev, dots) in enumerate([(52, 18, 1, 1), (92, 28, -1, 2), (132, 42, 1, 3)]):
-        a, b = (0, 360) if rev > 0 else (360, 0)
-        d = "".join(f'<circle cx="{820+r*math.cos(2*math.pi*k/dots+r)}" cy="{170+r*math.sin(2*math.pi*k/dots+r)}" r="4.5" fill="{cols[(ri*2+k)%6]}"/>' for k in range(dots))
-        orbit += (f'<g><circle cx="820" cy="170" r="{r}" fill="none" stroke="#fff" stroke-opacity=".18" stroke-dasharray="3 7"/>{d}'
-                  f'<animateTransform attributeName="transform" type="rotate" from="{a} 820 170" to="{b} 820 170" dur="{dur}s" repeatCount="indefinite"/></g>')
+    """Right side: one request travelling through the stack I work on:
+    ECG signal -> ML model -> API -> UI, looping every 8 seconds."""
+    T = 8
+    AC = ["#7fd6ff", "#c4b5fd", "#6ee7b7", "#f9a8d4"]
+    def kv(kt, vals): return f'keyTimes="{";".join(f"{t:.4f}" for t in kt)}" values="{";".join(str(v) for v in vals)}"'
+    def act(i, base, hi, attr):
+        st, e = i / 4, (i + 1) / 4
+        if i == 0: kt, v = [0, e, e + .03, 1], [hi, hi, base, base]
+        elif i == 3: kt, v = [0, st, st + .03, 1], [base, base, hi, hi]
+        else: kt, v = [0, st, st + .03, e, e + .03, 1], [base, base, hi, hi, base, base]
+        return f'<animate attributeName="{attr}" {kv(kt, v)} dur="{T}s" repeatCount="indefinite"/>'
+    def vis(t0, t1=None):
+        if t1 is None: kt, v = [0, t0, 1], [0, 1, 1]
+        else: kt, v = [0, t0, t1, 1], [0, 1, 0, 0]
+        return f'<animate attributeName="opacity" calcMode="discrete" {kv(kt, v)} dur="{T}s" repeatCount="indefinite"/>'
+    lab = lambda t, i: f'<text x="12" y="20" style="font:700 10px {MONO};letter-spacing:1px;fill:{AC[i]}">{t}</text>'
+    foot = lambda t: f'<text x="12" y="101" style="font:500 10px {MONO};fill:#94a3b8">{t}</text>'
+    def shell(x, y, i, inner):
+        return (f'<g transform="translate({x} {y})"><rect width="160" height="110" rx="14" fill="{AC[i]}" fill-opacity="0">{act(i, 0, .14, "fill-opacity")}</rect>'
+                f'<rect width="160" height="110" rx="14" fill="#fff" fill-opacity=".05" stroke="{AC[i]}" stroke-opacity=".25">{act(i, .25, 1, "stroke-opacity")}</rect>{inner}</g>')
+    # 01 signal: scrolling ECG
+    beat = "h10 l3,-4 l3,4 h5 l2,3 l4,-26 l4,34 l3,-10 h5 l3,-5 l3,5 h12"
+    A = (lab("01 SIGNAL", 0) + f'<clipPath id="ca"><rect x="8" y="28" width="144" height="60"/></clipPath><g clip-path="url(#ca)"><g>'
+         f'<path d="M0 62 {beat*9}" fill="none" stroke="{AC[0]}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>'
+         '<animateTransform attributeName="transform" type="translate" from="0 0" to="-57 0" dur="1.4s" repeatCount="indefinite"/></g></g>' + foot("ECG input"))
+    # 02 model: tiny network
+    xs = [34, 80, 126]; ys = [[48, 64, 80], [42, 56, 70, 84], [56, 72]]; ln = nd = ""
+    for l in range(2):
+        for y1 in ys[l]:
+            for y2 in ys[l + 1]:
+                ln += f'<line x1="{xs[l]}" y1="{y1}" x2="{xs[l+1]}" y2="{y2}" stroke="{AC[1]}" stroke-opacity=".28"/>'
+    for l in range(3):
+        for y in ys[l]: nd += f'<circle cx="{xs[l]}" cy="{y}" r="4.5" fill="{AC[1]}" opacity=".4">{act(1, .4, 1, "opacity")}</circle>'
+    B = lab("02 MODEL", 1) + ln + nd + foot("CNN predict(ecg)")
+    # 03 api: request / response
+    st = 2 / 4
+    C = (lab("03 API", 2) + f'<text x="12" y="46" opacity="0" style="font:500 10px {MONO};fill:#e2e8f0">POST /predict{vis(st+.01)}</text>'
+         f'<text x="12" y="62" opacity="0" style="font:500 10px {MONO};fill:#94a3b8">{{ ecg: [0.12, ...] }}{vis(st+.05)}</text>'
+         f'<text x="12" y="80" opacity="0" style="font:700 10px {MONO};fill:{AC[2]}">200 OK  34ms{vis(st+.11)}</text>' + foot("Node / Laravel"))
+    # 04 ui: browser result
+    st = 3 / 4
+    dots = "".join(f'<circle cx="{124+k*10}" cy="16" r="2.5" fill="{c}"/>' for k, c in enumerate(["#f87171", "#fbbf24", "#34d399"]))
+    D = (lab("04 UI", 3) + dots + f'<text x="12" y="46" opacity="0" style="font:700 11px {MONO};fill:#fff">Normal rhythm{vis(st+.02)}</text>'
+         '<rect x="12" y="55" width="136" height="6" rx="3" fill="#fff" fill-opacity=".12"/>'
+         f'<rect x="12" y="55" width="0" height="6" rx="3" fill="{AC[3]}"><animate attributeName="width" {kv([0, st+.02, st+.12, 1], [0, 0, 132, 132])} dur="{T}s" repeatCount="indefinite"/></rect>'
+         f'<text x="12" y="86" opacity="0" style="font:700 18px {MONO};fill:{AC[3]}">97%{vis(st+.1)}</text>' + foot("Next.js interface"))
+    cards = shell(590, 40, 0, A) + shell(800, 40, 1, B) + shell(800, 190, 2, C) + shell(590, 190, 3, D)
+    paths = ["M750 95 L800 95", "M880 150 L880 190", "M800 245 L750 245", "M670 190 L670 150"]
+    flow = ""
+    for i, d in enumerate(paths):
+        ts, te = i / 4 + .12, (i + 1) / 4 - (.001 if i == 3 else 0)
+        flow += (f'<path id="hp{i}" d="{d}" stroke="#fff" stroke-opacity=".25" stroke-width="1.5" stroke-dasharray="3 5" fill="none"><animate attributeName="stroke-dashoffset" from="16" to="0" dur="1s" repeatCount="indefinite"/></path>'
+                 f'<circle r="4.5" fill="{AC[i]}" opacity="0">{vis(ts, te)}<animateMotion dur="{T}s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;{ts:.4f};{te:.4f};1"><mpath href="#hp{i}"/></animateMotion></circle>')
     blobs = ""
     for cx, cy, r, col, op, dur, dx, dy in [(200, 340, 170, "#36bcf7", .55, 15, 160, -50), (620, 30, 180, "#7c5cf0", .55, 19, -140, 60),
                                             (930, 340, 150, "#14b8a6", .45, 17, -120, -60), (430, 360, 120, "#f472b6", .5, 13, 120, -70),
                                             (980, 20, 110, "#fbbf24", .35, 16, -90, 70)]:
         blobs += (f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="{col}" fill-opacity="{op}"><animateTransform attributeName="transform" type="translate" values="0 0;{dx} {dy};0 0" dur="{dur}s" repeatCount="indefinite" calcMode="spline" keyTimes="0;.5;1" keySplines=".45 0 .55 1;.45 0 .55 1"/></circle>')
     roles = ["Full-Stack Web Developer", "Machine Learning Enthusiast", "Telecommunications & ICT Engineer"]
-    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 340" width="1000" height="340" role="img" aria-label="Sidali Khelil Cherfi: {esc(' | '.join(roles))}"><style>{FONTCSS}</style>
+    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 340" width="1000" height="340" role="img" aria-label="Sidali Khelil Cherfi: {esc(' | '.join(roles))}. Animation: an ECG signal flows through a machine learning model and an API into a web interface."><style>{FONTCSS}</style>
 <defs><clipPath id="cl"><rect width="1000" height="340" rx="26"/></clipPath><filter id="bl" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="55"/></filter>
 <linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="#7fd6ff"/><stop offset=".55" stop-color="#c4b5fd"/><stop offset="1" stop-color="#f9a8d4"/></linearGradient></defs>
-<g clip-path="url(#cl)"><rect width="1000" height="340" fill="#0a0d15"/><g filter="url(#bl)">{blobs}</g>{orbit}
-<circle cx="820" cy="170" r="8" fill="#fff"><animate attributeName="r" values="7;11;7" dur="3s" repeatCount="indefinite"/></circle>
-<rect width="1000" height="340" fill="#0a0d15" fill-opacity=".15"/></g>
+<g clip-path="url(#cl)"><rect width="1000" height="340" fill="#0a0d15"/><g filter="url(#bl)">{blobs}</g><rect width="1000" height="340" fill="#0a0d15" fill-opacity=".35"/>{flow}{cards}</g>
 <rect x=".5" y=".5" width="999" height="339" rx="25.5" fill="none" stroke="#fff" stroke-opacity=".12"/>
-{reveal(f'<text x="54" y="132" style="font:700 80px {SANS};letter-spacing:-3px;fill:#fff">Sidali</text>',.1,18)}
-{reveal(f'<text x="54" y="212" style="font:700 80px {SANS};letter-spacing:-3px;fill:url(#g)">Khelil Cherfi</text>',.35,18)}
-{reveal(typing(roles,58,276,13.2,22,"#9fe0ff"),.8,0)}
+{reveal(f'<text x="54" y="124" style="font:700 64px {MONO};letter-spacing:-3px;fill:#fff">Sidali</text>',.1,18)}
+{reveal(f'<text x="54" y="194" style="font:700 64px {MONO};letter-spacing:-3px;fill:url(#g)">Khelil Cherfi</text>',.35,18)}
+{reveal(typing(roles,58,262,13.2,22,"#9fe0ff"),.8,0)}
 </svg>'''
     (OUT / "hero.svg").write_text(svg, encoding="utf-8")
 
@@ -300,7 +346,7 @@ def activity():
     s = title("Activity", 2, "Contributions over the last 26 weeks")
     s += (f'<clipPath id="gc"><rect x="{gx}" y="{gy}" width="{gw}" height="{gh}"/></clipPath>{cells}'
           f'<g clip-path="url(#gc)"><rect y="{gy}" width="70" height="{gh}" fill="url(#sw)"><animateTransform attributeName="transform" type="translate" values="{gx-70} 0;{gx+gw} 0;{gx+gw} 0" keyTimes="0;.55;1" dur="7s" begin="2.5s" repeatCount="indefinite"/></rect></g>'
-          f'<text x="{gx+gw+24}" y="120" style="font:700 32px {SANS};fill:var(--k5)">{num(S["contrib"])}</text><text class="sb" x="{gx+gw+24}" y="142">in the past year</text>')
+          f'<text x="{gx+gw+24}" y="120" style="font:700 32px {SANS};fill:var(--k5)">{num(S["contrib"])}</text><text class="sb" x="{gx+gw+24}" y="142">past 12 months</text>')
     lg = "".join(f'<rect x="{gx+gw+24+i*16}" y="166" width="12" height="12" rx="3.5" fill="var(--c{i})"/>' for i in range(5))
     P.append(card(0, 0, 600, 200, s + lg, .3, 2))
     s = title("Top languages", 3)
@@ -310,7 +356,7 @@ def activity():
         s += (f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{col}" stroke-width="{sw}" stroke-dasharray="{max(ln-2,1):.2f} {C-max(ln-2,1):.2f}" stroke-dashoffset="{-off:.2f}" transform="rotate(-90 {cx} {cy})">'
               f'<animate attributeName="stroke-dasharray" values="0 {C:.2f};0 {C:.2f};{max(ln-2,1):.2f} {C-max(ln-2,1):.2f}" keyTimes="{kt}" dur="{d+.9:.2f}s" fill="freeze"/></circle>')
         off += ln; y = 76 + i * 26
-        leg += f'{lang_icon(n, 176, y-14, 16)}<text class="mono" x="200" y="{y}">{esc(n[:15])}</text><text class="sb" x="360" y="{y}" text-anchor="end">{p/tot*100:.0f}%</text>'
+        leg += f'{lang_icon(n, 176, y-14, 16)}<text class="mono" x="200" y="{y}">{esc(cut(SHORT.get(n, n), 15))}</text><text class="sb" x="360" y="{y}" text-anchor="end">{p/tot*100:.0f}%</text>'
     P.append(card(616, 0, 384, 200, s + leg, .45, 3))
     s = title("Streak", 4)
     rr = 40; Cc = 2 * math.pi * rr; frac = min(1, cur / max(longest, 1))
@@ -327,8 +373,8 @@ def activity():
     P.append(card(316, 216, 330, 170, s, .75, 5))
     s = title("Top repositories", 6)
     for i, r in enumerate(toprepos):
-        y = 70 + i * 38; desc = (r["description"] or "No description yet")[:40]; st = str(r["stargazers_count"])
-        s += (f'{lang_icon(r["language"], 22, y-14, 16) if r["language"] else octi("repo", 22, y-14, 16, "var(--mu)")}<text class="mono" x="44" y="{y}">{esc(r["name"][:22])}</text>'
+        y = 70 + i * 38; desc = cut(r["description"] or "No description yet", 34); st = str(r["stargazers_count"])
+        s += (f'{lang_icon(r["language"], 22, y-14, 16) if r["language"] else octi("repo", 22, y-14, 16, "var(--mu)")}<text class="mono" x="44" y="{y}">{esc(cut(r["name"], 22))}</text>'
               f'{octi("star", 314-len(st)*8-18, y-12, 13, "var(--k4)")}<text class="sb" x="314" y="{y}" text-anchor="end">{st}</text><text class="sb" x="44" y="{y+16}">{esc(desc)}</text>')
     P.append(card(662, 216, 338, 170, s, .9, 6))
     wrap("activity.svg", 1000, 386, "GitHub activity: heatmap, languages, streak, weekly rhythm and top repositories", "".join(P))
@@ -341,7 +387,7 @@ def work():
         x = 24 + (i % 2) * 222; y = 62 + (i // 2) * 62
         ico = [brand("react", x + 12, y + 14, 24), spark(x + 12, y + 14, "var(--k2)"), netglyph(x + 12, y + 14, "var(--k3)"), brand("kubernetes", x + 12, y + 14, 24)][i]
         s += (f'<rect x="{x}" y="{y}" width="210" height="52" rx="14" fill="var(--k{k})" fill-opacity=".14" stroke="var(--k{k})" stroke-opacity=".5"/>{ico}'
-              f'<text class="mono" x="{x+46}" y="{y+23}" style="font-weight:700">{t}</text><text class="sb" x="{x+46}" y="{y+41}">{sub}</text>')
+              f'<text class="mono" x="{x+46}" y="{y+23}" style="font-weight:700">{t}</text><text class="sb" x="{x+46}" y="{y+41}" style="font-size:11px">{sub}</text>')
     P.append(card(0, 0, 490, 190, s, .3, 1))
     # neural network
     s = title("Machine learning", 2, "Classic ML, CNNs, RNNs and Vision Transformers")
@@ -396,8 +442,8 @@ def work():
     for i, (yr, role, org, k, ic) in enumerate(steps):
         x = 100 + i * 200
         s += (f'<circle cx="{x}" cy="108" r="17" fill="var(--k{k})"/>{octi(ic, x-9, 99, 18, "var(--card)")}<circle cx="{x}" cy="108" r="17" fill="none" stroke="var(--k{k})"><animate attributeName="r" values="17;32" dur="2.6s" begin="{i*.5}s" repeatCount="indefinite"/><animate attributeName="stroke-opacity" values=".8;0" dur="2.6s" begin="{i*.5}s" repeatCount="indefinite"/></circle>'
-              f'<text x="{x}" y="74" text-anchor="middle" style="font:700 19px {SANS};fill:var(--k{k})">{yr}</text>'
-              f'<text x="{x}" y="152" text-anchor="middle" style="font:700 15px {SANS};fill:var(--tx)">{role}</text><text class="sb" x="{x}" y="172" text-anchor="middle">{org}</text>')
+              f'<text x="{x}" y="74" text-anchor="middle" style="font:700 18px {SANS};fill:var(--k{k})">{yr}</text>'
+              f'<text x="{x}" y="152" text-anchor="middle" style="font:700 14px {SANS};fill:var(--tx)">{role}</text><text class="sb" x="{x}" y="172" text-anchor="middle" style="font-size:11.5px">{org}</text>')
     P.append(card(0, 412, 1000, 200, s, .9, 2))
     wrap("work.svg", 1000, 612, "Focus areas, machine learning, projects and journey", "".join(P))
 
